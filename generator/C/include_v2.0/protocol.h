@@ -2,7 +2,7 @@
 
 #include "string.h"
 #include "mavlink_types.h"
-
+#include "assert.h"
 /* 
    If you want MAVLink on a system that is native big-endian,
    you need to define NATIVE_BIG_ENDIAN
@@ -22,7 +22,7 @@
 #endif
 
 #ifndef MAVLINK_ASSERT
-#define MAVLINK_ASSERT(x)
+#define MAVLINK_ASSERT(x) assert(x)
 #endif
 
 #ifndef MAVLINK_START_UART_SEND
@@ -43,15 +43,15 @@
     MAVLINK_HELPER mavlink_status_t* mavlink_get_channel_status(uint8_t chan);
     #endif
     MAVLINK_HELPER void mavlink_reset_channel_status(uint8_t chan);
-    MAVLINK_HELPER uint16_t mavlink_finalize_message_buffer(mavlink_message_t* msg, uint8_t system_id, uint8_t component_id,
-                                                            mavlink_status_t* status, uint8_t min_length, uint8_t length, uint8_t crc_extra);
-    MAVLINK_HELPER uint16_t mavlink_finalize_message_chan(mavlink_message_t* msg, uint8_t system_id, uint8_t component_id,
-                                                          uint8_t chan, uint8_t min_length, uint8_t length, uint8_t crc_extra);
-    MAVLINK_HELPER uint16_t mavlink_finalize_message(mavlink_message_t* msg, uint8_t system_id, uint8_t component_id,
-                                                     uint8_t min_length, uint8_t length, uint8_t crc_extra);
+    MAVLINK_HELPER uint16_t mavlink_finalize_message_buffer(mavlink_message_t* msg, uint16_t system_id, uint8_t component_id,
+                                                            mavlink_status_t* status, uint16_t min_length, uint16_t length, uint8_t crc_extra);
+    MAVLINK_HELPER uint16_t mavlink_finalize_message_chan(mavlink_message_t* msg, uint16_t system_id, uint8_t component_id,
+                                                          uint8_t chan, uint16_t min_length, uint16_t length, uint8_t crc_extra);
+    MAVLINK_HELPER uint16_t mavlink_finalize_message(mavlink_message_t* msg, uint16_t system_id, uint8_t component_id,
+                                                     uint16_t min_length, uint16_t length, uint8_t crc_extra);
     #ifdef MAVLINK_USE_CONVENIENCE_FUNCTIONS
     MAVLINK_HELPER void _mav_finalize_message_chan_send(mavlink_channel_t chan, uint32_t msgid, const char *packet,
-                                                        uint8_t min_length, uint8_t length, uint8_t crc_extra);
+                                                        uint16_t min_length, uint16_t length, uint8_t crc_extra);
     #endif
     MAVLINK_HELPER uint16_t mavlink_msg_to_send_buffer(uint8_t *buffer, const mavlink_message_t *msg);
     MAVLINK_HELPER void mavlink_start_checksum(mavlink_message_t* msg);

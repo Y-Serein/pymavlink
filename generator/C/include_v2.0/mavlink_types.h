@@ -21,10 +21,12 @@ namespace mavlink {
 
 #ifndef MAVLINK_MAX_PAYLOAD_LEN
 // it is possible to override this, but be careful!
-#define MAVLINK_MAX_PAYLOAD_LEN 255 ///< Maximum payload length
+#define MAVLINK_MAX_PAYLOAD_LEN 262 ///< Maximum payload length
 #endif
 
-#define MAVLINK_CORE_HEADER_LEN 9 ///< Length of core header (of the comm. layer)
+// add 9 -> 11 len+1 sysid+1
+// core header len not include magic(stx)
+#define MAVLINK_CORE_HEADER_LEN 11 ///< Length of core header (of the comm. layer)
 #define MAVLINK_CORE_HEADER_MAVLINK1_LEN 5 ///< Length of MAVLink1 core header (of the comm. layer)
 #define MAVLINK_NUM_HEADER_BYTES (MAVLINK_CORE_HEADER_LEN + 1) ///< Length of all header bytes, including core and stx
 #define MAVLINK_NUM_CHECKSUM_BYTES 2
@@ -32,6 +34,7 @@ namespace mavlink {
 
 #define MAVLINK_SIGNATURE_BLOCK_LEN 13
 
+// printf -> 289
 #define MAVLINK_MAX_PACKET_LEN (MAVLINK_MAX_PAYLOAD_LEN + MAVLINK_NUM_NON_PAYLOAD_BYTES + MAVLINK_SIGNATURE_BLOCK_LEN) ///< Maximum packet length
 
 /**
@@ -100,7 +103,7 @@ typedef struct param_union_extended {
  */
 MAVPACKED(
 typedef struct __mavlink_system {
-    uint8_t sysid;   ///< Used by the MAVLink message_xx_send() convenience function
+    uint16_t sysid;   ///< Used by the MAVLink message_xx_send() convenience function
     uint8_t compid;  ///< Used by the MAVLink message_xx_send() convenience function
 }) mavlink_system_t;
 
@@ -108,14 +111,14 @@ MAVPACKED(
 typedef struct __mavlink_message {
 	uint16_t checksum;      ///< sent at end of packet
 	uint8_t magic;          ///< protocol magic marker
-	uint8_t len;            ///< Length of payload
+	uint16_t len;            ///< Length of payload
 	uint8_t incompat_flags; ///< flags that must be understood
 	uint8_t compat_flags;   ///< flags that can be ignored if not understood
 	uint8_t seq;            ///< Sequence of packet
-	uint8_t sysid;          ///< ID of message sender system/aircraft
+	uint16_t sysid;          ///< ID of message sender system/aircraft
 	uint8_t compid;         ///< ID of the message sender component
 	uint32_t msgid:24;      ///< ID of message in payload
-	uint64_t payload64[(MAVLINK_MAX_PAYLOAD_LEN+MAVLINK_NUM_CHECKSUM_BYTES+7)/8];
+	uint64_t payload64[(MAVLINK_MAX_PAYLOAD_LEN+MAVLINK_NUM_CHECKSUM_BYTES)/8];
 	uint8_t ck[2];          ///< incoming checksum bytes
 	uint8_t signature[MAVLINK_SIGNATURE_BLOCK_LEN];
 }) mavlink_message_t;
@@ -187,11 +190,13 @@ typedef enum {
     MAVLINK_PARSE_STATE_UNINIT=0,
     MAVLINK_PARSE_STATE_IDLE,
     MAVLINK_PARSE_STATE_GOT_STX,
-    MAVLINK_PARSE_STATE_GOT_LENGTH,
+    MAVLINK_PARSE_STATE_GOT_LENGTH1,
+    MAVLINK_PARSE_STATE_GOT_LENGTH2,
     MAVLINK_PARSE_STATE_GOT_INCOMPAT_FLAGS,
     MAVLINK_PARSE_STATE_GOT_COMPAT_FLAGS,
     MAVLINK_PARSE_STATE_GOT_SEQ,
-    MAVLINK_PARSE_STATE_GOT_SYSID,
+    MAVLINK_PARSE_STATE_GOT_SYSID1,
+    MAVLINK_PARSE_STATE_GOT_SYSID2,
     MAVLINK_PARSE_STATE_GOT_COMPID,
     MAVLINK_PARSE_STATE_GOT_MSGID1,
     MAVLINK_PARSE_STATE_GOT_MSGID2,
@@ -221,7 +226,7 @@ typedef struct __mavlink_status {
     uint8_t buffer_overrun;             ///< Number of buffer overruns
     uint8_t parse_error;                ///< Number of parse errors
     mavlink_parse_state_t parse_state;  ///< Parsing state machine
-    uint8_t packet_idx;                 ///< Index in current packet
+    uint16_t packet_idx;                 ///< Index in current packet
     uint8_t current_rx_seq;             ///< Sequence number of last packet received
     uint8_t current_tx_seq;             ///< Sequence number of last packet sent
     uint16_t packet_rx_success_count;   ///< Received packets
@@ -275,7 +280,7 @@ typedef struct __mavlink_signing_streams {
     uint16_t num_signing_streams;
     struct __mavlink_signing_stream {
         uint8_t link_id;              ///< ID of the link (MAVLINK_CHANNEL)
-        uint8_t sysid;                ///< Remote system ID
+        uint16_t sysid;                ///< Remote system ID
         uint8_t compid;               ///< Remote component ID
         uint8_t timestamp_bytes[6];   ///< Timestamp, in microseconds since UNIX epoch GMT
     } stream[MAVLINK_MAX_SIGNING_STREAMS];
@@ -294,8 +299,8 @@ typedef struct __mavlink_signing_streams {
 typedef struct __mavlink_msg_entry {
 	uint32_t msgid;
 	uint8_t crc_extra;
-        uint8_t min_msg_len;       // minimum message length
-        uint8_t max_msg_len;       // maximum message length (e.g. including mavlink2 extensions)
+        uint16_t min_msg_len;       // minimum message length
+        uint16_t max_msg_len;       // maximum message length (e.g. including mavlink2 extensions)
         uint8_t flags;             // MAV_MSG_ENTRY_FLAG_*
 	uint8_t target_system_ofs; // payload offset to target_system, or 0
 	uint8_t target_component_ofs; // payload offset to target_component, or 0

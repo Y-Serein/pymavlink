@@ -423,9 +423,9 @@ class mavfile(object):
                 self.flightmode = mode_string_v10(msg)
                 self.mav_type = msg.type
                 self.base_mode = msg.base_mode
-                self.sysid_state[self.sysid].armed = (msg.base_mode & mavlink.MAV_MODE_FLAG_SAFETY_ARMED)
-                self.sysid_state[self.sysid].mav_type = msg.type
-                self.sysid_state[self.sysid].mav_autopilot = msg.autopilot
+                self.sysid_state[src_system].armed = (msg.base_mode & mavlink.MAV_MODE_FLAG_SAFETY_ARMED)
+                self.sysid_state[src_system].mav_type = msg.type
+                self.sysid_state[src_system].mav_autopilot = msg.autopilot
         elif type == 'HIGH_LATENCY2':
             if self.sysid == 0:
                 # lock onto id tuple of first vehicle heartbeat
@@ -434,9 +434,9 @@ class mavfile(object):
             self.mav_type = msg.type
             if msg.autopilot == mavlink.MAV_AUTOPILOT_ARDUPILOTMEGA:
                 self.base_mode = msg.custom0
-                self.sysid_state[self.sysid].armed = (msg.custom0 & mavlink.MAV_MODE_FLAG_SAFETY_ARMED)
-            self.sysid_state[self.sysid].mav_type = msg.type
-            self.sysid_state[self.sysid].mav_autopilot = msg.autopilot
+                self.sysid_state[src_system].armed = (msg.custom0 & mavlink.MAV_MODE_FLAG_SAFETY_ARMED)
+            self.sysid_state[src_system].mav_type = msg.type
+            self.sysid_state[src_system].mav_autopilot = msg.autopilot
 
         elif type == 'PARAM_VALUE':
             if not src_tuple in self.param_state:
@@ -1477,12 +1477,14 @@ class mavmmaplog(mavlogfile):
         self.f.seek(0, 2)
         self.data_len = self.f.tell()
         self.f.seek(0)
-        if platform.system() == "Windows":
-            self.data_map = mmap.mmap(self.f.fileno(), self.data_len, None, mmap.ACCESS_READ)
-        else:
-            self.data_map = mmap.mmap(self.f.fileno(), self.data_len, mmap.MAP_PRIVATE, mmap.PROT_READ)
-        self._rewind()
-        self.init_arrays(progress_callback)
+        self.data_map = None
+        if self.data_len != 0:
+            if platform.system() == "Windows":
+                self.data_map = mmap.mmap(self.f.fileno(), self.data_len, None, mmap.ACCESS_READ)
+            else:
+                self.data_map = mmap.mmap(self.f.fileno(), self.data_len, mmap.MAP_PRIVATE, mmap.PROT_READ)
+            self._rewind()
+            self.init_arrays(progress_callback)
         self._flightmodes = None
 
     def _rewind(self):
@@ -1498,7 +1500,8 @@ class mavmmaplog(mavlogfile):
 
     def close(self):
         super(mavmmaplog, self).close()
-        self.data_map.close()
+        if self.data_map is not None:
+            self.data_map.close()
 
     def init_arrays(self, progress_callback=None):
         '''initialise arrays for fast recv_match()'''
@@ -1618,6 +1621,8 @@ class mavmmaplog(mavlogfile):
 
     def skip_to_type(self, type):
         '''skip fwd to next msg matching given type set'''
+        if self.data_map is None:
+            return
         if self.type_nums is None:
             # always add some key msg types so we can track flightmode, params etc
             type = type.copy()
@@ -1730,6 +1735,127 @@ class mavchildexec(mavfile):
     def write(self, buf):
         self.child.stdin.write(buf)
 
+class mavwebsocket(mavfile):
+    '''Mavlink WebSocket server, single client only'''
+    def __init__(self, device, source_system=255, source_component=0, use_native=default_native):
+        # Try importing wsproto, we don't need it here but it means we fail early if its missing
+        import wsproto
+
+        self.ws = None
+
+        # This is a duplicate of mavtcpin
+        a = device.split(':')
+        if len(a) != 2:
+            raise ValueError("WebSocket ports must be specified as host:port")
+        self.listen = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.listen_addr = (a[0], int(a[1]))
+        self.listen.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.listen.bind(self.listen_addr)
+        self.listen.listen(1)
+        self.listen.setblocking(0)
+        set_close_on_exec(self.listen.fileno())
+        self.listen.setsockopt(socket.SOL_TCP, socket.TCP_NODELAY, 1)
+        mavfile.__init__(self, self.listen.fileno(), "wsserver:" + device, source_system=source_system, source_component=source_component, use_native=use_native)
+        self.port = None
+
+    def close_port(self):
+        self.port.close()
+        self.port = None
+        self.fd = self.listen.fileno()
+        self.ws = None
+
+    def close(self):
+        if self.port is not None:
+            self.close_port()
+        self.listen.close()
+
+    def recv(self,n=None):
+        from wsproto import ConnectionType, WSConnection, utilities
+        from wsproto.events import (
+            AcceptConnection,
+            CloseConnection,
+            Request,
+            BytesMessage,
+        )
+
+        # Based on: https://github.com/python-hyper/wsproto/blob/main/example/synchronous_server.py
+        if not self.port:
+            try:
+                (self.port, addr) = self.listen.accept()
+            except Exception:
+                return ''
+            self.port.setsockopt(socket.SOL_TCP, socket.TCP_NODELAY, 1) 
+            self.port.setblocking(0) 
+            set_close_on_exec(self.port.fileno())
+            self.fd = self.port.fileno()
+
+            # Start server
+            self.ws = WSConnection(ConnectionType.SERVER)
+
+        if not self.ws:
+            # Should probbily raise a exception of some sort
+            return ''
+
+        # Read in some data and pass it to the WebSocket handeler
+        RECEIVE_BYTES = 4096
+        try:
+            in_data = self.port.recv(RECEIVE_BYTES)
+            self.ws.receive_data(in_data)
+        except socket.error as e:
+            if e.errno in [ errno.EAGAIN, errno.EWOULDBLOCK ]:
+                return ''
+            self.close_port()
+            return ''
+        except utilities.RemoteProtocolError:
+            self.close_port()
+            return ''
+
+        # Procces WebSocket events
+        data = b""
+        reply = b""
+        keep_running = True
+        for event in self.ws.events():
+            if isinstance(event, Request):
+                # Negotiate new WebSocket connection
+                reply += self.ws.send(AcceptConnection())
+
+            elif isinstance(event, CloseConnection):
+                # Request to close
+                reply += self.ws.send(event.response())
+                keep_running = False
+
+            elif isinstance(event, BytesMessage):
+                # Some actual MAVLink data
+                data += event.data
+
+        if len(reply) > 0:
+            # Send any reply to incomming requests
+            self.port.send(reply)
+
+        if not keep_running:
+            self.close_port()
+
+        # Return the extracted data
+        return data
+
+    def write(self, buf):
+        if self.port is None or self.ws is None:
+            return
+
+        from wsproto.events import (
+            BytesMessage,
+        )
+
+        # Pack buf into WebSocket binary message
+        packed = self.ws.send(BytesMessage(data = buf))
+
+        try:
+            self.port.send(packed)
+        except socket.error as e:
+            if e.errno in [ errno.EPIPE ]:
+                self.close_port()
+            pass
+
 
 def mavlink_connection(device, baud=115200, source_system=255, source_component=0,
                        planner_format=None, write=False, append=False,
@@ -1762,6 +1888,8 @@ def mavlink_connection(device, baud=115200, source_system=255, source_component=
         return mavudp(device[7:], input=False, source_system=source_system, source_component=source_component, use_native=use_native)
     if device.startswith('udpbcast:'):
         return mavudp(device[9:], input=False, source_system=source_system, source_component=source_component, use_native=use_native, broadcast=True)
+    if device.startswith('wsserver:'):
+        return mavwebsocket(device[9:], source_system=source_system, source_component=source_component, use_native=use_native)
     # For legacy purposes we accept the following syntax and let the caller to specify direction
     if device.startswith('udp:'):
         return mavudp(device[4:], input=input, source_system=source_system, source_component=source_component, use_native=use_native)
