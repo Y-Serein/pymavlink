@@ -510,8 +510,6 @@ static void mavlink_test_${name_lower}(uint16_t system_id, uint8_t component_id,
     printf("\\n----${name_lower} test begin----\\n");
 
     mavlink_message_t msg;
-        uint8_t buffer[MAVLINK_MAX_PACKET_LEN];
-        uint16_t i;
     mavlink_${name_lower}_t packet_in = {
         ${{ordered_fields:${c_test_value},}}
     };

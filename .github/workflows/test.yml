@@ -5,6 +5,12 @@ on: [push, pull_request]
 # - "*"
 # - "!README.md" <-- don't rebuild on doc change
 
+env:
+  # Official MAVLink revision paired with the pymavlink base of this branch.
+  MAVLINK_TEST_REF: 2825252d6d13eb347520f028b3c580ab29bd78e5
+  # JavaScript interop uses the standard C codec from that revision.
+  MAVGEN_C: ${{ github.workspace }}/mavlink/pymavlink/tools/mavgen.py
+
 jobs:
   build:
 
@@ -27,9 +33,11 @@ jobs:
           pip install flake8 pytest pytest-mock numpy
           if [ "${{ matrix.python-version }}" != "3.5" ]
           then
-            pip install mypy
+            # The generated dialects use the bytes typing rules of this mypy version.
+            pip install mypy==1.4.1
           fi
-          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          # Existing tests use pkg_resources, which was removed in setuptools 82.
+          if [ -f requirements.txt ]; then pip install -r requirements.txt "setuptools<82"; fi
           sudo apt update
           sudo apt install -y libgtest-dev g++ tshark
 
@@ -40,7 +48,7 @@ jobs:
       - name: Lint with flake8
         run: |
           # stop the build if there are Python syntax errors or undefined names
-          flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+          flake8 . --count --select=E9,F63,F7,F821,F822,F823 --show-source --statistics
           # exit-zero treats all errors as warnings. The GitHub web ui editor is 127 chars wide
           SELECT=C,E10,E11,E401,E502,E703,E8,E9,F,W191,W291,W292,W293,W391
           flake8 . --count --exit-zero --select=${SELECT} --max-complexity=10 --max-line-length=127 --statistics
@@ -51,10 +59,14 @@ jobs:
       # Set pythonpath
 
       # install
-      - name: Install mavlink message
-        run: |
-          git clone https://github.com/ArduPilot/mavlink.git
-          ln -s $PWD/mavlink/message_definitions ../
+      - name: Check out MAVLink test definitions
+        uses: actions/checkout@v4
+        with:
+          repository: ArduPilot/mavlink
+          ref: ${{ env.MAVLINK_TEST_REF }}
+          path: mavlink
+          submodules: true
+      - run: ln -s "$PWD/mavlink/message_definitions" ../
 
       - name: Install pymavlink
         run: |
@@ -67,7 +79,7 @@ jobs:
             flake8 --ignore='W503,E203,E501,E741' --statistics dialects/v10/python2/*.py dialects/v20/python2/*.py
           else
             flake8 --ignore='W503,E203,E501,E741' --statistics dialects/
-            mypy --config-file ./.github/workflows/mypy-generated.ini dialects/v10/*.py dialects/v20/*.py
+            mypy --python-version "${{ matrix.python-version }}" --config-file ./.github/workflows/mypy-generated.ini dialects/v10/*.py dialects/v20/*.py
           fi
 
       - name: Generate messages
@@ -83,7 +95,7 @@ jobs:
 
       - name: Test with pytest
         run: |
-          python -m pytest
+          python -m pytest tests
 
 
   node-tests:
@@ -107,10 +119,14 @@ jobs:
       - uses: actions/setup-node@v2
         with:
           node-version: ${{ matrix.node-version }}
-      - name: Install mavlink message
-        run: |
-          git clone https://github.com/ArduPilot/mavlink.git
-          ln -s $PWD/mavlink/message_definitions ../
+      - name: Check out MAVLink test definitions
+        uses: actions/checkout@v4
+        with:
+          repository: ArduPilot/mavlink
+          ref: ${{ env.MAVLINK_TEST_REF }}
+          path: mavlink
+          submodules: true
+      - run: ln -s "$PWD/mavlink/message_definitions" ../
       - run: cd "generator/javascript" && npm install
       - name : Test mavlink
         run: |

@@ -15,7 +15,7 @@
 
 # this script can be called manually by a human, or it can be triggered by a 'npm test' from the generator/javascript/ folder, so we handle either.
 
-set -e
+set -eo pipefail
 #set -x
 RED='\033[1;31m'
 GRN='\033[1;31m'
@@ -51,8 +51,8 @@ test -z "$MDEF" && MDEF="../message_definitions"
     #    we quieten them as we really aren't testing THEM here.
     printf "${RED}Generating C bindings to test JS-NextGen against...${NC}\n\n"
     sleep 1
-    ./tools/mavgen.py --lang C $MDEF/v1.0/ardupilotmega.xml -o generator/C/include_v1.0 --wire-protocol=1.0 > $OUT2
-    ./tools/mavgen.py --lang C $MDEF/v1.0/ardupilotmega.xml -o generator/C/include_v2.0 --wire-protocol=2.0 > $OUT2
+    "${MAVGEN_C:-./tools/mavgen.py}" --lang C "$MDEF/v1.0/ardupilotmega.xml" -o generator/C/include_v1.0 --wire-protocol=1.0 > $OUT2
+    "${MAVGEN_C:-./tools/mavgen.py}" --lang C "$MDEF/v1.0/ardupilotmega.xml" -o generator/C/include_v2.0 --wire-protocol=2.0 > $OUT2
 
 
     #   we quieten them as we really aren't testing THEM here.

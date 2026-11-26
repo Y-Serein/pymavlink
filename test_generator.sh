@@ -6,7 +6,7 @@
 #   easy_install-2.7 pip
 #   pip install future
 
-set -e
+set -eo pipefail
 set -x
 
 test -z "$MDEF" && MDEF="../message_definitions"
